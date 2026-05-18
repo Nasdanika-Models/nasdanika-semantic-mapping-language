@@ -19,6 +19,7 @@ NSML is designed to address three usage patterns:
    communication artifacts between SMEs, developers, and AI agents.
 
 Mapping definitions can be compiled to Java as targets for the [`org.nasdanika.common.Transformer`](https://github.com/Nasdanika/core/blob/master/common/src/main/java/org/nasdanika/common/Transformer.java) - providing composability with hand-written Java transformations.
+Mapping definitions can map to an Ecore model defined elsewhere or be a mapping + Ecore model definition in one.
 
 ## Design Principles
 
