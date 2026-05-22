@@ -125,6 +125,32 @@ The compilation target is described at:
 https://github.com/Nasdanika/core/blob/master/common/src/main/java/org/nasdanika/common/Transformer.java
 and https://medium.com/nasdanika/documenting-json-schemas-15e3bd690c33.
 
+### 7. Operations as first-class transformation targets
+
+Ecore is a metamodel rather than a pure data format. Classifiers carry **structural features** (attributes and references) **and operations** - typed methods with parameters and return types. XSLT-style transformation languages historically address only structure because XML has only structure; NSML targets Ecore and therefore treats operations as first-class transformation targets alongside features.
+
+A rule may:
+
+- **Hide an operation** that exists on the source classifier - the produced classifier exposes a strict subset of the source's interface.
+- **Modify the behavior of an operation** - the produced classifier's operation delegates to a different implementation than the source's, declared through the same expression mechanism used for feature values.
+- **Introduce an operation** that does not exist on the source - the produced classifier exposes behavior the source does not, computed from the source's state.
+- **Bind parameters** - the produced operation pre-supplies values for one or more of the source operation's parameters, narrowing its signature. The analogy is JavaScript's `Function.prototype.bind()`, with two differences. First, JavaScript `bind` captures the value passed at bind time and freezes it for every subsequent call; NSML binds a parameter to an **expression** that is re-evaluated at invocation time **in the context of the source object**, so the bound value can depend on the state of the source when the operation is called rather than being fixed when the transformation was authored. Second, JavaScript `bind` only pre-supplies a consecutive run of leading parameters; NSML can bind **any parameter, by name or position**, leaving the remaining parameters exposed.
+The implementation behind a transformed or introduced operation is declared the same way feature values are: as a typed expression in one of the registered languages, with the same externalization options. The expression may invoke a hand-written Java method, a service, another transformation, or - the case that distinguishes NSML's operation support most clearly from XSLT-era languages - an **agent**. An operation introduced by a transformation and backed by an LLM agent operating over the produced view turns the view into a complete agent contract: what the agent sees (the produced data) and what the agent does (the produced operations) are both declared in the same artifact.
+
+### 8. Privacy and access control through transformation
+
+The federated model assumed by NSML's other use cases is open by default. A complementary modality is the *protected* federation: a model assembled in a controlled environment - private repositories, on-prem stores, or a local model that references external public artifacts - over which an access policy is applied before the model is shared with any consumer.
+
+NSML's slicing mechanism is the natural vehicle for that policy. An access-control transformation expressed in NSML:
+
+- Suppresses elements the principal is not permitted to read.
+- Suppresses features and operations the principal is not permitted to access.
+- Optionally renames or generalizes elements where the existence of the element is visible to the principal but its identity is not.
+
+Policies compose with [Apache Shiro](https://shiro.models.nasdanika.org/) primitives - subjects, roles, groups, permissions - where element and feature URIs serve as the permission strings. A subject's allowed view is the transformation of the full model that retains exactly the elements and features the subject's permissions admit.
+
+The transformation produces a self-contained model - same metamodel conformance, same NSML and OpGraph tooling - that can be served from a Web UI session, published to a repository the principal can read, or rendered as a static site for offline distribution. **Agent semantic contexts derived from a transformed view inherit the same access bounds by construction:** an agent cannot reason over elements the transformation removed. Confidentiality is a property of the view, not a property the agent has to be trusted to respect.
+
 ## The Transformation Model
 
 NSML transformations are themselves Ecore models. 
@@ -277,7 +303,10 @@ defined by an NSML transformation. The transformation:
 - Hides fields the agent must not see.
 
 The transformation is reviewable, testable, and version-controlled - far more
-auditable than prompt-level context construction.
+auditable than prompt-level context construction. When the transformation is also
+the subject's access policy (see UC-6), the agent's context is bounded by the same
+policy as the human consumer's view, and confidentiality is inherited by construction
+rather than enforced by trust.
 
 ### UC-4: Cross-Version Model Migration
 
@@ -295,6 +324,40 @@ the output. No code, no compilation, no project setup.
 
 With the [SQL metadata model](https://sql.models.nasdanika.org/) it can be done for databases,
 including data migration or defining a data access layer.
+
+### UC-6: Access-Controlled Federated Views
+
+A federated model assembled in a protected environment combines elements from many
+sources - some public, some restricted to specific teams, some sensitive to particular
+stakeholders. An NSML transformation expressing the access policy of a given subject
+produces the view that subject is permitted to see, drawing from the full federation.
+
+The transformation is itself an artifact - version-controlled, reviewable, testable.
+Compliance teams audit the policy by reading the transformation; security teams run
+conformance tests against it. The produced view is a self-contained model that ships
+through the standard Nasdanika tooling: served interactively from a Web UI session,
+published to a repository the principal can read, or rendered as a static site for
+offline distribution. Agent semantic contexts derived from the produced view operate
+under the same access bounds by construction.
+
+This is the foundation that makes NSML usable in environments where total openness
+is not an option: organizations with strategic confidentiality requirements, vendors
+maintaining customer-specific federations, and portals where each consumer authors
+their own personas privately while consuming shared capability declarations.
+
+### UC-7: Agent-Backed Operations
+
+A view produced by an NSML transformation exposes data the consumer is allowed to
+see and operations the consumer is allowed to invoke. Some of those operations are
+backed by agents: "summarize this for my role," "find elements like this for a
+different persona," "compare these two proposals on the dimensions that matter to me."
+
+The transformation declares each operation, its typed signature, its access
+constraints, and the agent (or pipeline) that implements it. The agent operates over
+the produced view - that is, under the same data access bounds as the human consumer.
+The view becomes a complete contract for both human and machine interaction: data
+plus behavior, both authored as part of the same NSML transformation, both
+inspectable and citable from the model.
 
 ## Compilation Pipeline
 
@@ -339,6 +402,14 @@ performance and for integration with other compiled code.
 - Draw.io diagram-to-NSML conventions
 - XText DSL with IDE support
 
+### Phase 5 - Operations and Access Control
+
+- Operation transformation: hide, redirect, introduce
+- Agent-backed operation bindings
+- Apache Shiro integration: subjects, roles, groups, URI-based permissions
+- Access policy authoring as NSML transformations
+- Conformance tests for access policies
+
 ## Relationship to Existing Tools
 
 | Tool | Relationship |
@@ -349,7 +420,7 @@ performance and for integration with other compiled code.
 | **VIATRA** | Reactive incremental transformation with sophisticated pattern matching. NSML does not currently target incremental evaluation; it is a possible future direction. |
 | **Epsilon (ETL)** | Closest in spirit - declarative, pragmatic, Eclipse-hosted. NSML's pluggable expression languages and AI-era tooling are the main differentiation. |
 | **DataWeave** | Closest commercial peer (MuleSoft). DataWeave is JSON/XML-focused, not Ecore-focused. NSML targets the model-driven engineering audience DataWeave does not. |
-| **XSLT** | The conceptual ancestor. NSML applies the match-and-template idea to Ecore instead of XML, with a different and pluggable expression language layer instead of XPath alone. |
+| **XSLT** | The conceptual ancestor. NSML applies the match-and-template idea to Ecore instead of XML, with a pluggable expression language layer in place of XPath alone. Because Ecore - unlike XML - has operations, NSML extends the XSLT model to transform operations (hide, redirect, introduce) as well as features, with operation backings that may include agents. |
 
 ## Open Design Questions
 
@@ -368,3 +439,18 @@ performance and for integration with other compiled code.
 5. **Conflict resolution for imports:** When two imported transformations have rules
    that match the same input, which wins? Explicit precedence, import order,
    specificity, or an error?
+6. **Operation backing implementations:** A rule that introduces or modifies an
+   operation declares the backing as a typed expression. Should the same set of
+   expression languages be admissible for operation backings as for feature values,
+   or should backings be restricted (e.g., to registered services, named agents, and
+   Java methods, excluding ad-hoc Groovy)? The trade-off is authoring flexibility
+   versus operational safety.
+7. **Access policy composition:** When a subject has multiple roles and groups, each
+   contributing an access policy expressed as an NSML transformation, how are the
+   policies composed? Intersection (most restrictive) by default with explicit
+   override, union (most permissive), or a higher-order transformation that combines
+   them? How is the composed policy itself audited?
+8. **Operation visibility under access control:** An operation may be visible to the
+   consumer but invocable only by a subset of subjects. Is operation invocability a
+   separate permission from operation visibility, or is the visible-but-not-invocable
+   case expressed by declaring two operations - one read-only, one privileged?
