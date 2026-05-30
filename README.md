@@ -359,6 +359,48 @@ The view becomes a complete contract for both human and machine interaction: dat
 plus behavior, both authored as part of the same NSML transformation, both
 inspectable and citable from the model.
 
+### UC-8: Resource Content Filters - Filename-Driven Loading Pipelines
+
+EMF's `Resource.Factory` mechanism dispatches by file extension to produce model
+content.
+The Nasdanika extension generalizes this: a filename can declare a *chain* of extensions, each registered as a `ResourceContentFilter` capability that
+transforms the previous stage's model into the next.
+A file named `my-product.pm.md` loads as Markdown (the `.md` factory), then is mapped to the
+Product Management model (the `.pm` filter); a file named
+`internet-banking-system.c4.drawio` loads as a draw.io diagram, then is mapped to
+a C4 model; a file named `adams.family.xlsx` loads as Excel, then is mapped to
+a family model.
+The client code calls `ResourceSet.getResource(uri)` and receives
+the target model directly, with the conversion machinery hidden behind the
+standard EMF abstraction.
+
+NSML is the natural implementation substrate for these filters. Each filter is
+declared as an NSML transformation - inputs are the previous stage's model,
+outputs are the target model, mapping rules express the conversion.
+Writing a new filter becomes writing a new transformation rather than writing custom Java
+loader code. Cross-format filters compose freely: a draw.io file can reference
+Markdown files (via prototype references), and the Markdown files are loaded
+through their own filter chain before being merged into the diagram's mapped
+output.
+Enrichment from external systems - resolving references against a live
+service, fetching authoritative data - is handled by NSML rules invoking external
+expression evaluators during the transformation; the source filename does not
+change, but the resolved model carries the enriched content.
+
+Bi-directional filters are possible where the target model can be projected back
+to the source format.
+For diagrams, geometry-preserving back-projection is the
+canonical hard case: changes to the C4 model that correspond to existing diagram
+elements preserve those elements' geometry, while changes that introduce new
+elements get geometry from ELK auto-layout.
+The bi-directionality is hidden behind the same filter contract - `Resource.save()` writes back through the chain
+when possible, with explicit diagnostics when it is not.
+
+The pattern composes with CLI command pipelines. A CLI invocation like `nsd model internet-banking-system.c4.md html-app site` runs the filename pipeline
+(`.md` to Markdown to C4) to produce the input for the command pipeline (`html-app` to `site`).
+Two grammars meet at the model boundary: filename grammar produces the typed model, command grammar consumes and transforms it.
+The combined sentence is a single CLI invocation that hides arbitrary depth of loading and processing behind a uniform interface.
+
 ## Compilation Pipeline
 
 ```
