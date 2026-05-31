@@ -401,6 +401,47 @@ The pattern composes with CLI command pipelines. A CLI invocation like `nsd mode
 Two grammars meet at the model boundary: filename grammar produces the typed model, command grammar consumes and transforms it.
 The combined sentence is a single CLI invocation that hides arbitrary depth of loading and processing behind a uniform interface.
 
+A `ResourceContentFilter` is also the natural place to apply *access control and
+projection*.
+The filter receives a security principal through the capability
+framework as a requirement and produces a target model that contains only the elements the
+principal is entitled to see.
+The principal can reach the framework two ways, and well-designed filters support both transparently:
+
+- **Ambient discovery** for single-principal contexts (CLI tools, build pipelines,
+  single-user services). The capability resolver discovers the principal from
+  the OS user name, an environment variable, a JAAS subject, an OAuth token in
+  the process context, or any other provider registered against the
+  principal-source capability. The consumer code calls
+  `ResourceSet.getResource(uri)` without supplying anything; the principal is
+  acquired implicitly.
+- **Explicit binding** for multi-principal contexts (HTTP servers, gRPC services,
+  MCP server endpoints, anything serving concurrent per-request authentication).
+  The consumer supplies the principal as a *requirement* when constructing the
+  `ResourceSet` - the resource set is built *for* that principal, and filters
+  loading content within it resolve the principal capability against the bound
+  requirement rather than against ambient state. A request handler resolves the
+  principal from the request (OAuth token, mTLS certificate, session token,
+  whatever the protocol carries), constructs a per-request resource set for that
+  principal, loads resources within it, returns the projected content, and
+  discards the resource set when the request completes. Concurrent requests with
+  different principals do not interfere because each operates in its own
+  resource-set scope; the filter implementation does not change between
+  single-principal and multi-principal deployments.
+
+Different consumers loading the same source file receive different target
+models; the consumer code in both cases calls `ResourceSet.getResource(uri)`
+without knowledge of the projection. This is the deployment shape of
+[UC-6: Access-Controlled Federated Views](#uc-6-access-controlled-federated-views)
+and [UC-7: Agent-Backed Operations](#uc-7-agent-backed-operations) at the
+resource-loading boundary: the same content can serve a senior leader's view, a
+delivery team's view, a partner's view, or an AI agent's view, with the access
+policy expressed as an NSML transformation rather than enforced through ad-hoc
+checks scattered through application code. An agent reasoning over a
+filter-projected resource sees only what the resource exposes, so the agent's
+data-access boundary is identical to the user's by construction rather than by
+trust.
+
 ## Compilation Pipeline
 
 ```
